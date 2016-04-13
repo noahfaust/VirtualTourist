@@ -58,28 +58,30 @@ extension FlickrClient {
                     return
             }
             
-            // Parse the array of movies dictionaries
-            let _ = photosArray.map() { (dictionary: [String : AnyObject]) -> Photo in
-                let photo = Photo(dictionary: dictionary, context: CoreDataStackManager.sharedInstance().managedObjectContext)
-                
-                photo.location = location
-                
-                return photo
-            }
-            
             guard let currentPage = photosDictionary[JSONKeys.Page] as? Int else {
                 print("Cannot find key 'page' in \(photosDictionary)")
                 completion(success: false, errorString: "Cannot find key 'page'")
                 return
             }
-            location.lastRequestPage = Int64(currentPage)
             
             guard let totalPages = photosDictionary[JSONKeys.Pages] as? Int else {
                 print("Cannot find key 'pages' in \(photosDictionary)")
                 completion(success: false, errorString: "Cannot find key 'pages'")
                 return
             }
-            location.lastRequestTotalPages = Int64(totalPages)
+            
+            // Parse the array of movies dictionaries
+            dispatch_async(dispatch_get_main_queue()) { () -> Void in
+                let _ = photosArray.map() { (dictionary: [String : AnyObject]) -> Photo in
+                    let photo = Photo(dictionary: dictionary, context: CoreDataStackManager.sharedInstance().managedObjectContext)
+                    
+                    photo.location = location
+                    
+                    return photo
+                }
+                location.lastRequestPage = Int64(currentPage)
+                location.lastRequestTotalPages = Int64(totalPages)
+            }
                 
             completion(success: true, errorString: nil)
         }
@@ -99,8 +101,10 @@ extension FlickrClient {
                 // Craete the image
                 let image = UIImage(data: data)
                 
-                // update the model, so that the infrmation gets cashed
-                photo.image = image
+                dispatch_async(dispatch_get_main_queue()) { () -> Void in
+                    // update the model, so that the infrmation gets cashed
+                    photo.image = image
+                }
                 
                 completion(success: true, errorString: nil)
             }

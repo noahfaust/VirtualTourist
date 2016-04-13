@@ -17,7 +17,7 @@ class FlickrClient: NSObject {
         super.init()
     }
     
-    let PhotosPerPage = 21
+    let PhotosPerPage = 10
     let Precision = 0.01
     
     // MARK: - Shared Instance

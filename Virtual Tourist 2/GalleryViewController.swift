@@ -56,7 +56,7 @@ class GalleryViewController: UIViewController {
         super.viewWillAppear(animated)
         if let fetchedObjects = fetchedResultsController.fetchedObjects where fetchedObjects.isEmpty {
             downloadNewPhotos()
-            saveContext()
+            //saveContext()
         }
     }
     
@@ -73,7 +73,7 @@ class GalleryViewController: UIViewController {
             sharedContext.deleteObject(o as! Photo)
         }
         downloadNewPhotos()
-        saveContext()
+        //saveContext()
     }
     
     func deleteButtonTouchUp() {
@@ -89,7 +89,9 @@ class GalleryViewController: UIViewController {
     func downloadNewPhotos() {
         let client = FlickrClient.sharedInstance()
         client.getLocationPhotos(location) { success, errorString in
-            return
+            //dispatch_async(dispatch_get_main_queue()) { () -> Void in
+                self.saveContext()
+            //}
         }
     }
     
@@ -156,7 +158,9 @@ extension GalleryViewController: UICollectionViewDataSource {
         } else {
             let client = FlickrClient.sharedInstance()
             let task = client.downloadImage(photo) { success, errorString in
-                self.saveContext()
+                //dispatch_async(dispatch_get_main_queue()) { () -> Void in
+                    self.saveContext()
+                //}
             }
             
             // This is the custom property on this cell. See TaskCancelingTableViewCell.swift for details.
@@ -226,6 +230,7 @@ extension GalleryViewController: NSFetchedResultsControllerDelegate {
     // Solution found here: https://gist.github.com/lukasreichart/0ce6b782a5428bd17904
     
     func controllerWillChangeContent(controller: NSFetchedResultsController) {
+        print("controllerWillChangeContent")
         shouldReloadCollectionView = false
         blockOperation = NSBlockOperation()
         blockOperation?.qualityOfService = .UserInitiated
@@ -247,7 +252,7 @@ extension GalleryViewController: NSFetchedResultsControllerDelegate {
                 self.collectionView.reloadItemsAtIndexPaths([indexPath!])
             }
         case .Delete:
-            if collectionView.numberOfItemsInSection(indexPath!.section) == 1 {
+            if fetchedResultsController.sections![indexPath!.section].numberOfObjects == 0 {
                 shouldReloadCollectionView = true
             } else {
                 blockOperation!.addExecutionBlock(){
@@ -264,14 +269,17 @@ extension GalleryViewController: NSFetchedResultsControllerDelegate {
     func controllerDidChangeContent(controller: NSFetchedResultsController) {
         
         if shouldReloadCollectionView {
+            print("controllerDidChangeContent to reload data")
             dispatch_async(dispatch_get_main_queue()) {
                 self.collectionView.reloadData()
             }
         } else {
-            self.collectionView.performBatchUpdates({
-                self.blockOperation!.start()
-            }, completion: nil)
-            
+            print("controllerDidChangeContent to performBatchUpdates")
+            dispatch_async(dispatch_get_main_queue()) {
+                self.collectionView.performBatchUpdates({
+                    self.blockOperation!.start()
+                }, completion: nil)
+            }
         }
     }
 }
