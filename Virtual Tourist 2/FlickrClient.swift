@@ -17,7 +17,7 @@ class FlickrClient: NSObject {
         super.init()
     }
     
-    let PhotosPerPage = 10
+    let PhotosPerPage = 18
     let Precision = 0.01
     
     // MARK: - Shared Instance
@@ -65,22 +65,6 @@ class FlickrClient: NSObject {
                 return
             }
             
-//            /* GUARD: Did we get a successful 2XX response? */
-//            guard let statusCode = (response as? NSHTTPURLResponse)?.statusCode where statusCode >= 200 && statusCode <= 299 else {
-//                if let response = response as? NSHTTPURLResponse {
-//                    print("Your request returned an invalid response! Status code: \(response.statusCode)")
-//                } else if let response = response {
-//                    print("Your request returned an invalid response! Response: \(response)")
-//                } else {
-//                    print("Your request returned an invalid response")
-//                }
-//                if let data = data {
-//                    print("Data: \(NSString(data: data, encoding: NSUTF8StringEncoding))")
-//                }
-//                completion(result: nil, error: .InvalidResponse)
-//                return
-//            }
-            
             /* GUARD: Was there any data returned? */
             guard let data = data else {
                 print("No data was returned by the request")
@@ -118,13 +102,6 @@ class FlickrClient: NSObject {
             }
             
             completion(imageData: data, error: nil)
-            
-//            if let error = downloadError {
-//                let newError = TheMovieDB.errorForData(data, response: response, error: error)
-//                completionHandler(imageData: nil, error: newError)
-//            } else {
-//                completionHandler(imageData: data, error: nil)
-//            }
         }
         
         task.resume()
