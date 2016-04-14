@@ -21,9 +21,12 @@ class GalleryViewController: UIViewController {
     var refreshButton: UIBarButtonItem!
     var deleteButton: UIBarButtonItem!
     
-    var state: State = .Viewing
+    var state: State = .ViewMode
     var shouldReloadCollectionView = false
-    var blockOperation: NSBlockOperation?
+    var newIndexPaths = [NSIndexPath]()
+    var updatedIndexPaths = [NSIndexPath]()
+    var deletedIndexPaths = [NSIndexPath]()
+    var movedIndexPaths = [[String : NSIndexPath]]()
     let space: CGFloat = 6.0
     
     // MARK: Lifecycle
@@ -37,7 +40,7 @@ class GalleryViewController: UIViewController {
         
         refreshButton = UIBarButtonItem(barButtonSystemItem: .Refresh, target: self, action: #selector(GalleryViewController.refreshButtonTouchUp))
         deleteButton = UIBarButtonItem(barButtonSystemItem: .Trash, target: self, action: #selector(GalleryViewController.deleteButtonTouchUp))
-        navigationItem.rightBarButtonItems = [refreshButton]
+        navigationItem.rightBarButtonItem = refreshButton
         
         do {
             try fetchedResultsController.performFetch()
@@ -50,13 +53,14 @@ class GalleryViewController: UIViewController {
         mapView.setRegion(MKCoordinateRegion(center: location.coordinate, span: MKCoordinateSpan(latitudeDelta: CLLocationDegrees(0.1), longitudeDelta: CLLocationDegrees(0.1))), animated: true)
         mapView.scrollEnabled = false
         mapView.rotateEnabled = false
+        
+        markDownloadedPhoto()
     }
     
     override func viewWillAppear(animated: Bool) {
         super.viewWillAppear(animated)
         if let fetchedObjects = fetchedResultsController.fetchedObjects where fetchedObjects.isEmpty {
             downloadNewPhotos()
-            //saveContext()
         }
     }
     
@@ -69,41 +73,83 @@ class GalleryViewController: UIViewController {
     
     func refreshButtonTouchUp() {
         print("refreshButtonTouchUp")
+        setState(.Loading)
         for o in fetchedResultsController.fetchedObjects! {
             sharedContext.deleteObject(o as! Photo)
         }
         downloadNewPhotos()
-        //saveContext()
     }
     
     func deleteButtonTouchUp() {
         print("deleteButtonTouchUp")
-        for i in collectionView.indexPathsForSelectedItems()! {
-            let photo = fetchedResultsController.objectAtIndexPath(i) as! Photo
-            sharedContext.deleteObject(photo)
+        setState(.Deleting)
+        if let indexPathsForSelectedItems = collectionView.indexPathsForSelectedItems() {
+            for i in indexPathsForSelectedItems {
+                let photo = fetchedResultsController.objectAtIndexPath(i) as! Photo
+                dispatch_async(dispatch_get_main_queue()) {
+                    self.sharedContext.deleteObject(photo)
+                }
+            }
+            saveContext()
         }
-        saveContext()
-        setState(.Viewing)
     }
     
     func downloadNewPhotos() {
         let client = FlickrClient.sharedInstance()
         client.getLocationPhotos(location) { success, errorString in
-            //dispatch_async(dispatch_get_main_queue()) { () -> Void in
-                self.saveContext()
-            //}
+            self.saveContext()
         }
     }
     
     func setState(newState: State) {
         if state != newState {
             switch newState {
-            case .Deletion:
-                state = .Deletion
-                navigationItem.rightBarButtonItems = [deleteButton]
-            case .Viewing:
-                state = .Viewing
-                navigationItem.rightBarButtonItems = [refreshButton]
+            case .ViewMode:
+                if !isLoading() {
+                    print("setState Viewing")
+                    state = .ViewMode
+                    dispatch_async(dispatch_get_main_queue()) {
+                        self.navigationItem.rightBarButtonItem = self.refreshButton
+                        self.navigationItem.rightBarButtonItem!.enabled = true
+                    }
+                } else {
+                    print("setState still loading")
+                    setState(.Loading)
+                }
+            case .Loading, .Deleting:
+                print("setState Loading")
+                state = newState
+                dispatch_async(dispatch_get_main_queue()) {
+                    self.navigationItem.rightBarButtonItem!.enabled = false
+                }
+            case .DeletionMode:
+                print("setState DeletionMode")
+                state = .DeletionMode
+                dispatch_async(dispatch_get_main_queue()) {
+                    self.navigationItem.rightBarButtonItem = self.deleteButton
+                    self.navigationItem.rightBarButtonItem!.enabled = true
+                }
+            }
+        }
+    }
+    
+    func isLoading() -> Bool {
+        
+        for c in collectionView.visibleCells() {
+            if let photo = fetchedResultsController.fetchedObjects![(collectionView.indexPathForCell(c)!.item)] as? Photo {
+                if !photo.imageDownloaded {
+                    return true
+                }
+            }
+        }
+        print("collection is complete")
+        return false
+    }
+    
+    func markDownloadedPhoto() {
+        for o in fetchedResultsController.fetchedObjects as! [Photo] {
+            if o.imagePath != nil {
+                o.imageDownloaded = true
             }
         }
     }
@@ -136,7 +182,6 @@ class GalleryViewController: UIViewController {
         // Return the fetched results controller. It will be the value of the lazy variable
         return fetchedResultsController
     } ()
-    
 }
 
 extension GalleryViewController: UICollectionViewDataSource {
@@ -156,20 +201,45 @@ extension GalleryViewController: UICollectionViewDataSource {
         if let image = photo.image {
             cell.setImage(image)
         } else {
+            setState(.Loading)
             let client = FlickrClient.sharedInstance()
             let task = client.downloadImage(photo) { success, errorString in
-                //dispatch_async(dispatch_get_main_queue()) { () -> Void in
-                    self.saveContext()
-                //}
+                self.saveContext()
             }
             
-            // This is the custom property on this cell. See TaskCancelingTableViewCell.swift for details.
+            //This is the custom property on this cell. See TaskCancelingTableViewCell.swift for details.
             cell.taskToCancelifCellIsReused = task
         }
         
         return cell
     }
+}
+
+extension GalleryViewController: UICollectionViewDelegate {
     
+    // MARK: - Collection View Delegate
+    
+    func collectionView(collectionView: UICollectionView, shouldSelectItemAtIndexPath indexPath: NSIndexPath) -> Bool {
+        if collectionView.cellForItemAtIndexPath(indexPath)?.backgroundView != nil {
+            return true
+        } else {
+            return false
+        }
+    }
+    
+    func collectionView(collectionView: UICollectionView, didSelectItemAtIndexPath indexPath: NSIndexPath) {
+        setState(.DeletionMode)
+        collectionView.cellForItemAtIndexPath(indexPath)?.backgroundView?.alpha = 0.5
+    }
+    
+    func collectionView(collectionView: UICollectionView, shouldDeselectItemAtIndexPath indexPath: NSIndexPath) -> Bool {
+        return true
+    }
+    
+    func collectionView(collectionView: UICollectionView, didDeselectItemAtIndexPath indexPath: NSIndexPath) {
+        setState(.ViewMode)
+        collectionView.cellForItemAtIndexPath(indexPath)?.backgroundView?.alpha = 1
+    }
 }
 
 extension GalleryViewController: UICollectionViewDelegateFlowLayout {
@@ -193,38 +263,14 @@ extension GalleryViewController: UICollectionViewDelegateFlowLayout {
     func collectionView(collectionView: UICollectionView, layout collectionViewLayout: UICollectionViewLayout, insetForSectionAtIndex section: Int) -> UIEdgeInsets {
         return UIEdgeInsets(top: space, left: space, bottom: space, right: space)
     }
-    
-}
-
-extension GalleryViewController: UICollectionViewDelegate {
-    
-    // MARK: - Collection View Delegate
-    
-    func collectionView(collectionView: UICollectionView, shouldSelectItemAtIndexPath indexPath: NSIndexPath) -> Bool {
-        if collectionView.cellForItemAtIndexPath(indexPath)?.backgroundView != nil {
-            return true
-        } else {
-            return false
-        }
-    }
-    
-    func collectionView(collectionView: UICollectionView, didSelectItemAtIndexPath indexPath: NSIndexPath) {
-        setState(.Deletion)
-        collectionView.cellForItemAtIndexPath(indexPath)?.backgroundView?.alpha = 0.5
-    }
-    
-    func collectionView(collectionView: UICollectionView, shouldDeselectItemAtIndexPath indexPath: NSIndexPath) -> Bool {
-        return true
-    }
-    
-    func collectionView(collectionView: UICollectionView, didDeselectItemAtIndexPath indexPath: NSIndexPath) {
-        setState(.Viewing)
-        collectionView.cellForItemAtIndexPath(indexPath)?.backgroundView?.alpha = 1
-    }
-    
 }
 
 extension GalleryViewController: NSFetchedResultsControllerDelegate {
+    
+    struct MovedIndexPath {
+        static let From = "from"
+        static let To = "to"
+    }
     
     // MARK: - Fetched Results Controller Delegate
     // Solution found here: https://gist.github.com/lukasreichart/0ce6b782a5428bd17904
@@ -232,8 +278,11 @@ extension GalleryViewController: NSFetchedResultsControllerDelegate {
     func controllerWillChangeContent(controller: NSFetchedResultsController) {
         print("controllerWillChangeContent")
         shouldReloadCollectionView = false
-        blockOperation = NSBlockOperation()
-        blockOperation?.qualityOfService = .UserInitiated
+        
+        self.deletedIndexPaths.removeAll()
+        self.newIndexPaths.removeAll()
+        self.movedIndexPaths.removeAll()
+        self.updatedIndexPaths.removeAll()
     }
     
     func controller(controller: NSFetchedResultsController, didChangeObject anObject: AnyObject, atIndexPath indexPath: NSIndexPath?, forChangeType type: NSFetchedResultsChangeType, newIndexPath: NSIndexPath?) {
@@ -242,27 +291,19 @@ extension GalleryViewController: NSFetchedResultsControllerDelegate {
             if collectionView.numberOfItemsInSection(newIndexPath!.section) == 0 {
                 shouldReloadCollectionView = true
             } else {
-                blockOperation!.addExecutionBlock(){
-                    self.collectionView.insertItemsAtIndexPaths([newIndexPath!])
-                }
+                newIndexPaths.append(newIndexPath!)
             }
         case .Update:
             // Exisiting data that are fetched when the controller is initialised are considered as updates but they do not exist yet in the collection view, therefore the collection view should be reloaded
-            dispatch_async(dispatch_get_main_queue()) {
-                self.collectionView.reloadItemsAtIndexPaths([indexPath!])
-            }
+            updatedIndexPaths.append(indexPath!)
         case .Delete:
             if fetchedResultsController.sections![indexPath!.section].numberOfObjects == 0 {
                 shouldReloadCollectionView = true
             } else {
-                blockOperation!.addExecutionBlock(){
-                    self.collectionView.deleteItemsAtIndexPaths([indexPath!])
-                }
+                deletedIndexPaths.append(indexPath!)
             }
         case .Move:
-            blockOperation!.addExecutionBlock(){
-                self.collectionView.moveItemAtIndexPath(indexPath!, toIndexPath: newIndexPath!)
-            }
+            movedIndexPaths.append([MovedIndexPath.From : indexPath!, MovedIndexPath.To : newIndexPath!])
         }
     }
     
@@ -271,16 +312,33 @@ extension GalleryViewController: NSFetchedResultsControllerDelegate {
         if shouldReloadCollectionView {
             print("controllerDidChangeContent to reload data")
             dispatch_async(dispatch_get_main_queue()) {
-                self.collectionView.reloadData()
+                self.collectionView.reloadData() {
+                    if (self.state == .Loading && controller.fetchedObjects!.count != 0) || self.state == .Deleting {
+                        print("finish releasd data")
+                        self.setState(.ViewMode)
+                    }
+                }
             }
         } else {
             print("controllerDidChangeContent to performBatchUpdates")
-            dispatch_async(dispatch_get_main_queue()) {
+            
                 self.collectionView.performBatchUpdates({
-                    self.blockOperation!.start()
-                }, completion: nil)
+                    self.collectionView.deleteItemsAtIndexPaths(self.deletedIndexPaths)
+                    self.collectionView.reloadItemsAtIndexPaths(self.updatedIndexPaths)
+                    self.collectionView.insertItemsAtIndexPaths(self.newIndexPaths)
+                    for i in self.movedIndexPaths {
+                        self.collectionView.moveItemAtIndexPath(i[MovedIndexPath.From]!, toIndexPath: i[MovedIndexPath.To]!)
+                    }
+                }, completion: { success in
+                    dispatch_async(dispatch_get_main_queue()) {
+                        if (self.state == .Loading && controller.fetchedObjects!.count != 0) || self.state == .Deleting {
+                            print("finish performBatchUpdates")
+                            self.setState(.ViewMode)
+                        }
+                    }
+                })
             }
-        }
+        
     }
 }
 
@@ -289,7 +347,16 @@ extension GalleryViewController {
     // MARK: - Enum
     
     enum State {
-        case Viewing
-        case Deletion
+        case ViewMode
+        case Loading
+        case DeletionMode
+        case Deleting
+    }
+}
+
+extension UICollectionView {
+    func reloadData(completion: ()->()) {
+        UIView.animateWithDuration(0, animations: { self.reloadData() })
+        { _ in completion() }
     }
 }

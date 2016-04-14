@@ -23,6 +23,7 @@ class Photo: NSManagedObject {
     @NSManaged var imageUrl: String
     @NSManaged var imagePath: String?
     @NSManaged var location: Location?
+    var imageDownloaded: Bool = false
     
     override init(entity: NSEntityDescription, insertIntoManagedObjectContext context: NSManagedObjectContext?) {
         super.init(entity: entity, insertIntoManagedObjectContext: context)
@@ -49,12 +50,15 @@ class Photo: NSManagedObject {
         
         set {
             imagePath = FlickrClient.Caches.imageCache.storeImage(newValue, withIdentifier: id)
+            imageDownloaded = true
         }
     }
     
     override func prepareForDeletion() {
         print("Delete image with id: \(id)")
-        FlickrClient.Caches.imageCache.storeImage(nil, withIdentifier: id)
+        if let _ = self.imagePath {
+            FlickrClient.Caches.imageCache.storeImage(nil, withIdentifier: id)
+        }
         super.prepareForDeletion()
     }
     

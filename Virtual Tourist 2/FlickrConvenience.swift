@@ -71,7 +71,7 @@ extension FlickrClient {
             }
             
             // Parse the array of movies dictionaries
-            dispatch_async(dispatch_get_main_queue()) { () -> Void in
+            dispatch_async(dispatch_get_main_queue()) {
                 let _ = photosArray.map() { (dictionary: [String : AnyObject]) -> Photo in
                     let photo = Photo(dictionary: dictionary, context: CoreDataStackManager.sharedInstance().managedObjectContext)
                     
@@ -101,12 +101,12 @@ extension FlickrClient {
                 // Craete the image
                 let image = UIImage(data: data)
                 
-                dispatch_async(dispatch_get_main_queue()) { () -> Void in
+                dispatch_async(dispatch_get_main_queue()) {
                     // update the model, so that the infrmation gets cashed
                     photo.image = image
+                    
+                    completion(success: true, errorString: nil)
                 }
-                
-                completion(success: true, errorString: nil)
             }
         }
         return task

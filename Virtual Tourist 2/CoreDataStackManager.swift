@@ -118,7 +118,7 @@ class CoreDataStackManager {
     // MARK: - Core Data Saving support
     
     func saveContext () {
-        dispatch_async(dispatch_get_main_queue()) { () -> Void in
+        dispatch_async(dispatch_get_main_queue()) {
             if self.managedObjectContext.hasChanges {
             
                 do {
